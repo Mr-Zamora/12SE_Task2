@@ -64,22 +64,8 @@ def init_db():
 def load_pizzas():
     try:
         with open("pizza.json", "r") as f:
-            pizzas = json.load(f)
-            # If pizza.json is empty (just []), try to load from backup
-            if not pizzas and os.path.exists("static/backup/pizza.json.bak"):
-                with open("static/backup/pizza.json.bak", "r") as backup:
-                    pizzas = json.load(backup)
-                # Restore the backup to pizza.json
-                save_pizzas(pizzas)
-            return pizzas
+            return json.load(f)
     except FileNotFoundError:
-        # If file doesn't exist and we have a backup, restore from backup
-        if os.path.exists("static/backup/pizza.json.bak"):
-            with open("static/backup/pizza.json.bak", "r") as backup:
-                pizzas = json.load(backup)
-            # Create pizza.json from backup
-            save_pizzas(pizzas)
-            return pizzas
         return []
 
 # Save pizza data
@@ -87,14 +73,12 @@ def save_pizzas(pizzas):
     # Ensure backup directory exists
     os.makedirs("static/backup", exist_ok=True)
     
-    # Save to main file
+    # Save to both main file and backup
     with open("pizza.json", "w") as f:
         json.dump(pizzas, f, indent=4)
     
-    # Also save to backup if pizzas is not empty
-    if pizzas:
-        with open("static/backup/pizza.json.bak", "w") as f:
-            json.dump(pizzas, f, indent=4)
+    with open("static/backup/pizza.json.bak", "w") as f:
+        json.dump(pizzas, f, indent=4)
 
 # Vulnerable download route for directory traversal
 @app.route("/download")
@@ -250,7 +234,10 @@ def admin():
                 pizzas[pizza_id]["image"] = image_filename
         elif "delete" in request.form:
             pizza_id = int(request.form["delete"])
-            pizzas.pop(pizza_id)
+            if 0 <= pizza_id < len(pizzas):  # Check if index is valid
+                pizzas.pop(pizza_id)
+                save_pizzas(pizzas)
+                return redirect("/admin")
         else:
             pizzas.append({
                 "name": name,
