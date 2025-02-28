@@ -1,4 +1,4 @@
-from flask import Flask, render_template, request, redirect, session, jsonify, url_for
+from flask import Flask, render_template, request, redirect, session, jsonify, url_for, send_from_directory
 from flask_cors import CORS
 import json
 import sqlite3
@@ -64,14 +64,37 @@ def init_db():
 def load_pizzas():
     try:
         with open("pizza.json", "r") as f:
-            return json.load(f)
+            pizzas = json.load(f)
+            # If pizza.json is empty (just []), try to load from backup
+            if not pizzas and os.path.exists("static/backup/pizza.json.bak"):
+                with open("static/backup/pizza.json.bak", "r") as backup:
+                    pizzas = json.load(backup)
+                # Restore the backup to pizza.json
+                save_pizzas(pizzas)
+            return pizzas
     except FileNotFoundError:
+        # If file doesn't exist and we have a backup, restore from backup
+        if os.path.exists("static/backup/pizza.json.bak"):
+            with open("static/backup/pizza.json.bak", "r") as backup:
+                pizzas = json.load(backup)
+            # Create pizza.json from backup
+            save_pizzas(pizzas)
+            return pizzas
         return []
 
 # Save pizza data
 def save_pizzas(pizzas):
+    # Ensure backup directory exists
+    os.makedirs("static/backup", exist_ok=True)
+    
+    # Save to main file
     with open("pizza.json", "w") as f:
         json.dump(pizzas, f, indent=4)
+    
+    # Also save to backup if pizzas is not empty
+    if pizzas:
+        with open("static/backup/pizza.json.bak", "w") as f:
+            json.dump(pizzas, f, indent=4)
 
 # Vulnerable download route for directory traversal
 @app.route("/download")
@@ -523,6 +546,11 @@ def password_reset():
             <p><input type="submit" value="Update Password"></p>
         </form>
     """
+
+# Serve uploaded files
+@app.route('/uploads/<path:filename>')
+def serve_file(filename):
+    return send_from_directory('uploads', filename)
 
 if __name__ == "__main__":
     if not os.path.exists("uploads"):
