@@ -5,19 +5,19 @@ import sqlite3
 import os
 import sys
 import traceback
-import time  # Add time module for timestamps
+import time  
 
 app = Flask(__name__)
-app.secret_key = "12345"  # Weak session secret key for demonstration
+app.secret_key = "12345"  
 
-# Enable CORS with an insecure policy
+
 CORS(app, resources={r"/*": {"origins": "*"}})
 
-# Default credentials (Vulnerability 1 - Easy to find hardcoded credentials)
+
 DEFAULT_CREDENTIALS = {
-    "admin": "admin123",  # Default admin user
-    "test": "test123",    # Default test user
-    "demo": "demo123"     # Default demo user
+    "admin": "admin123",  
+    "test": "test123",    
+    "demo": "demo123"     
 }
 
 # Initialise database
@@ -35,7 +35,7 @@ def init_db():
         )
     """)
     
-    # Add profiles table with sensitive information (Vulnerability 3 - IDOR)
+    # Add profiles table with sensitive information
     c.execute("""
         CREATE TABLE IF NOT EXISTS profiles (
             user_id INTEGER PRIMARY KEY,
@@ -48,11 +48,11 @@ def init_db():
         )
     """)
     
-    # Add default users if they don't exist (Vulnerability 1 - Default credentials)
+    # Add default users if they don't exist
     for username, password in DEFAULT_CREDENTIALS.items():
         c.execute("SELECT * FROM users WHERE username = ?", (username,))
         if not c.fetchone():
-            # Add email for each default user (predictable pattern)
+            # Add email for each default user
             email = f"{username}@example.com"
             c.execute("INSERT INTO users (username, password, email) VALUES (?, ?, ?)",
                      (username, password, email))
@@ -94,7 +94,7 @@ def error_test():
     conn = sqlite3.connect("users.db")
     c = conn.cursor()
     query = f"SELECT * FROM users WHERE username = '{username}'"
-    c.execute(query)  # Generates verbose error if username is invalid
+    c.execute(query)  
     return f"Executed query: {query}"
 
 # Unrestricted file upload
@@ -122,7 +122,7 @@ def login():
         username = request.form["username"]
         password = request.form["password"]
 
-        # Try default credentials first (Vulnerability 1)
+        # Try default credentials first
         if username in DEFAULT_CREDENTIALS and DEFAULT_CREDENTIALS[username] == password:
             session['user'] = username
             return redirect(url_for('index'))
@@ -136,7 +136,7 @@ def login():
         conn.close()
 
         if user:
-            session['user'] = user[1]  # Assuming the username is in the second column
+            session['user'] = user[1]  
             return redirect(url_for('index'))
         else:
             return "Invalid credentials! <a href='/'>Try again</a>"
@@ -176,12 +176,10 @@ def logout():
 @app.route("/add_to_cart", methods=["POST"])
 def add_to_cart():
     pizza_name = request.form.get("pizza_name")
-    # Vulnerable - no input validation
     pizzas = load_pizzas()
     pizza = next((p for p in pizzas if p["name"] == pizza_name), None)
     
     if pizza:
-        # Use price from pizza.json
         cart_item = {
             "name": pizza["name"],
             "description": pizza["description"],
@@ -193,7 +191,6 @@ def add_to_cart():
         if 'cart' not in session:
             session['cart'] = []
         
-        # Check if item already in cart
         existing_item = next((item for item in session['cart'] if item["name"] == pizza_name), None)
         if existing_item:
             existing_item["quantity"] += 1
@@ -215,10 +212,9 @@ def admin():
     if request.method == "POST":
         name = request.form["name"]
         description = request.form["description"]
-        price = float(request.form.get("price", 0))  # Get price from form
+        price = float(request.form.get("price", 0))  
         image_file = request.files.get("image")
 
-        # Save uploaded image
         if image_file:
             image_filename = f"static/images/{image_file.filename}"
             image_file.save(image_filename)
@@ -229,12 +225,12 @@ def admin():
             pizza_id = int(request.form["update"])
             pizzas[pizza_id]["name"] = name
             pizzas[pizza_id]["description"] = description
-            pizzas[pizza_id]["price"] = price  # Update price
+            pizzas[pizza_id]["price"] = price  
             if image_filename:
                 pizzas[pizza_id]["image"] = image_filename
         elif "delete" in request.form:
             pizza_id = int(request.form["delete"])
-            if 0 <= pizza_id < len(pizzas):  # Check if index is valid
+            if 0 <= pizza_id < len(pizzas):  
                 pizzas.pop(pizza_id)
                 save_pizzas(pizzas)
                 return redirect("/admin")
@@ -242,7 +238,7 @@ def admin():
             pizzas.append({
                 "name": name,
                 "description": description,
-                "price": price,  # Add price
+                "price": price,  
                 "image": image_filename
             })
 
@@ -254,7 +250,6 @@ def admin():
 
 @app.route("/cart")
 def cart():
-    # Vulnerable cart implementation - no session validation
     cart_items = session.get('cart', [])
     return render_template("cart.html", cart_items=cart_items)
 
@@ -263,7 +258,6 @@ def update_cart():
     item_name = request.form.get("item")
     quantity = request.form.get("quantity")
     
-    # Vulnerable - no input validation
     if 'cart' in session:
         for item in session['cart']:
             if item["name"] == item_name:
@@ -277,7 +271,6 @@ def update_cart():
 def remove_from_cart():
     item_name = request.form.get("item")
     
-    # Vulnerable - no input validation
     if 'cart' in session:
         session['cart'] = [item for item in session['cart'] if item["name"] != item_name]
         session.modified = True
@@ -288,15 +281,13 @@ def remove_from_cart():
 def api_docs():
     return render_template("api_docs.html")
 
-# Vulnerability 2 - Route that exposes database errors
 @app.route("/user/<username>")
 def get_user(username):
     try:
         conn = sqlite3.connect("users.db")
         c = conn.cursor()
-        # Intentionally vulnerable to SQL injection and exposes error
         query = f"SELECT * FROM users WHERE username = '{username}'"
-        c.execute(query)
+        c.execute(query)  
         user = c.fetchone()
         conn.close()
         
@@ -304,19 +295,15 @@ def get_user(username):
             return f"Found user: {user}"
         return "User not found"
     except Exception as e:
-        # Expose full SQL error
         return f"""
             <h2>Database Error</h2>
             <p>Query: {query}</p>
             <p>Error: {str(e)}</p>
-            <p>Try adding a single quote (') to see SQL error</p>
         """, 500
 
-# Vulnerability 2 - Route that exposes system information through errors
 @app.route("/debug/<path:file_path>")
 def debug_file(file_path):
     try:
-        # Intentionally vulnerable to path traversal and exposes system info
         import platform
         system_info = {
             'os': platform.system(),
@@ -345,7 +332,6 @@ def debug_file(file_path):
             <pre>{json.dumps(system_info, indent=2)}</pre>
         """, 500
 
-# Vulnerability 2 - Verbose error handlers that expose sensitive information
 @app.errorhandler(500)
 def internal_error(error):
     import traceback
@@ -377,22 +363,16 @@ def internal_error(error):
 
 @app.errorhandler(404)
 def page_not_found(e):
-    # Vulnerability: Exposing test credentials in error page
     error_message = """
     Page not found. Please check our documentation for valid URLs.
-    
-    <!-- Developer Note: Use test/test123 for testing the staging environment -->
     """
     return error_message, 404
 
-# Vulnerability 3 - IDOR routes that expose user data without authorization
 @app.route("/profile/<int:user_id>")
 def view_profile(user_id):
-    # No authentication check, anyone can view any profile
     conn = sqlite3.connect("users.db")
     c = conn.cursor()
     
-    # Get user and profile data
     c.execute("""
         SELECT u.username, p.* 
         FROM users u 
@@ -404,7 +384,6 @@ def view_profile(user_id):
     conn.close()
     
     if data:
-        # Expose all user data including sensitive information
         return f"""
             <h2>User Profile</h2>
             <pre>
@@ -423,14 +402,12 @@ def view_profile(user_id):
 @app.route("/create_profile", methods=["GET", "POST"])
 def create_profile():
     if request.method == "POST":
-        # Get the currently logged in user's ID
         conn = sqlite3.connect("users.db")
         c = conn.cursor()
         c.execute("SELECT id FROM users WHERE username = ?", (session.get('user'),))
         user = c.fetchone()
         
         if user:
-            # Create a profile with some example data
             c.execute("""
                 INSERT OR REPLACE INTO profiles 
                 (user_id, full_name, email, phone, credit_card, address)
@@ -459,20 +436,16 @@ def create_profile():
         </form>
     """
 
-# Vulnerability Level 2.1 - Password Reset Flaws
 @app.route("/forgot-password", methods=["GET", "POST"])
 def forgot_password():
     if request.method == "POST":
         username = request.form.get("username")
         
-        # Generate predictable reset token (Vulnerability: token is predictable)
         timestamp = int(time.time())
-        token = f"{username}_{timestamp}"  # Predictable format
+        token = f"{username}_{timestamp}"  
         
-        # Create reset link
         reset_link = f"http://127.0.0.1:5000/password-reset?username={username}&token={token}"
         
-        # In a real app, we'd send an email. Here we'll just display it.
         return f"""
             <h2>Password Reset Requested</h2>
             <p>A password reset link has been generated.</p>
@@ -502,17 +475,8 @@ def password_reset():
         if not new_password:
             return "Missing new password", 400
         
-        # Vulnerability: No proper token validation
-        # 1. Token format is predictable (username_timestamp)
-        # 2. No expiration check
-        # 3. Tokens are not stored or tracked
-        # 4. No rate limiting
-        # 5. No verification needed
-        # 6. Passwords stored in plain text
-        
         conn = sqlite3.connect("users.db")
         c = conn.cursor()
-        # SQL injection vulnerability: no parameter binding
         query = f"UPDATE users SET password = '{new_password}' WHERE username = '{username}'"
         c.execute(query)
         conn.commit()
@@ -534,7 +498,6 @@ def password_reset():
         </form>
     """
 
-# Serve uploaded files
 @app.route('/uploads/<path:filename>')
 def serve_file(filename):
     return send_from_directory('uploads', filename)
@@ -543,9 +506,8 @@ if __name__ == "__main__":
     if not os.path.exists("uploads"):
         os.mkdir("uploads")
     
-    # Only initialize pizza.json if it doesn't exist
     if not os.path.exists("pizza.json"):
-        save_pizzas([])  # Create an empty pizza.json if it doesn't exist
+        save_pizzas([])  
     
     init_db()
     app.run(debug=True)
