@@ -76,10 +76,5 @@ git pull origin main
 pip install -r requirements.txt
 ```
 
-4. Reset the database (if needed):
-```bash
-python reset_db.py
-```
-
 ## Version Verification
 Each release includes a VERSION.md file with a unique hash. You can verify you have the correct version by comparing the hash in your VERSION.md with the official hash.
