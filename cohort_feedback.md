@@ -576,7 +576,7 @@ Critical - If the database is compromised, all user passwords and sensitive info
 
 *CVSS Score*: 9.1 (Critical)
 
-**5. Cross-Site Scripting (XSS)**
+**5. Cross-Site Scripting (XSS) (A07:2021)**
 
 *Vulnerability Description*:
 The application is vulnerable to cross-site scripting due to unescaped user input in HTML responses and missing security headers.
@@ -605,6 +605,283 @@ return f"""
 High - Allows execution of malicious scripts in users' browsers, potentially leading to session hijacking, credential theft, or malicious redirects.
 
 *CVSS Score*: 8.2 (High)
+
+**6. CORS Misconfiguration (A05:2021)**
+
+*Vulnerability Description*:
+The application implements a dangerously permissive CORS policy that allows requests from any origin to any endpoint.
+
+*Evidence*:
+```python
+# Unrestricted CORS configuration
+CORS(app, resources={r"/*": {"origins": "*"}})
+```
+
+*Attack Vectors*:
+- Cross-origin data theft from authenticated endpoints
+- API abuse from untrusted domains
+- Session token exposure when combined with cookie vulnerabilities
+
+*Impact*:
+High - Enables cross-origin attacks and data theft when combined with other vulnerabilities. Particularly dangerous when combined with missing cookie security attributes.
+
+*CVSS Score*: 7.5 (High)
+
+**7. Insecure Cookie Configuration (A05:2021)**
+
+*Vulnerability Description*:
+The application uses cookies for session management but fails to set critical security attributes.
+
+*Evidence*:
+```python
+# Missing secure cookie configuration
+# No settings for:
+# - SESSION_COOKIE_SECURE
+# - SESSION_COOKIE_HTTPONLY
+# - SESSION_COOKIE_SAMESITE
+```
+
+*Attack Vectors*:
+- Session hijacking via JavaScript access to cookies
+- Cookie theft over unencrypted connections
+- Cross-site request forgery attacks
+- Session fixation attacks
+
+*Impact*:
+Critical - Allows session theft and unauthorised actions, especially when combined with CORS misconfiguration.
+
+*CVSS Score*: 8.0 (High)
+
+**8. Clickjacking Vulnerability (A05:2021)**
+
+*Vulnerability Description*:
+The application is vulnerable to clickjacking (UI redressing) attacks due to missing security headers that would prevent framing.
+
+*Evidence*:
+```python
+# Missing security headers:
+# - X-Frame-Options
+# - Content-Security-Policy (frame-ancestors directive)
+```
+
+*Attack Vectors*:
+- UI redressing to trick users into clicking malicious elements
+- Overlay attacks targeting login forms
+- Credential theft through invisible frames
+- Unintended actions on payment or admin pages
+
+*Impact*:
+High - Allows attackers to trick users into performing unintended actions, potentially leading to credential theft or unauthorised transactions.
+
+*CVSS Score*: 6.5 (Medium)
+
+**9. Path Traversal (A01:2021)**
+
+*Vulnerability Description*:
+The application contains multiple endpoints vulnerable to path traversal, allowing access to files outside the intended directory.
+
+*Evidence*:
+```python
+# Download route with no path validation
+@app.route("/download")
+def download():
+    filename = request.args.get("file")
+    with open(filename, "r") as file:
+        return file.read()
+
+# Debug endpoint allows arbitrary file access
+@app.route("/debug/<path:file_path>")
+def debug_file(file_path):
+    with open(file_path, 'r') as f:
+        content = f.read()
+    return content
+```
+
+*Attack Vectors*:
+- Access to system files: `/download?file=../../../etc/passwd`
+- Access to application source code: `/debug/../app.py`
+- Access to configuration files: `/debug/../config/secrets.json`
+
+*Impact*:
+Critical - Allows reading arbitrary files on the server, potentially exposing sensitive system files, configuration data, and source code.
+
+*CVSS Score*: 7.5 (High)
+
+**10. Insecure Password Reset (A04:2021)**
+
+*Vulnerability Description*:
+The password reset functionality uses predictable tokens and lacks proper expiration and validation.
+
+*Evidence*:
+```python
+# Predictable token generation
+timestamp = int(time.time())
+token = f"{username}_{timestamp}"
+
+# Issues:
+# - No token expiration
+# - No rate limiting
+# - Tokens stored in plaintext
+```
+
+*Attack Vectors*:
+- Token prediction based on username and approximate timestamp
+- Brute force attacks against token validation
+- Unlimited password reset attempts
+
+*Impact*:
+High - Allows unauthorised password resets, potentially leading to account takeover.
+
+*CVSS Score*: 7.0 (High)
+
+**11. Verbose Error Messages (A04:2021)**
+
+*Vulnerability Description*:
+The application returns detailed error messages that expose sensitive information about the application structure and environment.
+
+*Evidence*:
+```python
+@app.errorhandler(500)
+def internal_error(error):
+    import traceback
+    error_details = {
+        'error_type': str(type(error).__name__),
+        'error_message': str(error),
+        'stack_trace': traceback.format_exc(),
+        'python_version': sys.version,
+        'flask_version': flask.__version__,
+        'debug_mode': app.debug,
+        'database_path': 'users.db'
+    }
+    return f"""
+        <h1>Internal Server Error</h1>
+        <pre>
+        Error Type: {error_details['error_type']}
+        Message: {error_details['error_message']}
+        
+        Full Stack Trace:
+        {error_details['stack_trace']}
+        
+        System Information:
+        Python Version: {error_details['python_version']}
+        Flask Version: {error_details['flask_version']}
+        Debug Mode: {error_details['debug_mode']}
+        Database: {error_details['database_path']}
+        </pre>
+    """, 500
+```
+
+*Attack Vectors*:
+- Stack trace analysis to identify vulnerable components
+- Database path discovery
+- Application version fingerprinting for known vulnerabilities
+- Code structure analysis
+
+*Impact*:
+Medium - Provides attackers with valuable information for crafting more targeted attacks.
+
+*CVSS Score*: 5.5 (Medium)
+
+**12. API Key Exposure (A02:2021)**
+
+*Vulnerability Description*:
+The application exposes sensitive API keys and credentials through the debug endpoint's system information disclosure.
+
+*Evidence*:
+```python
+system_info = {
+    'os': platform.system(),
+    'version': platform.version(),
+    'python': sys.version,
+    'user': os.getlogin(),
+    'cwd': os.getcwd(),
+    'env': dict(os.environ)  # Exposes ALL environment variables!
+}
+```
+
+*Attack Vectors*:
+- Access to OpenAI API key: `sk-proj-DFyuAeor6jbuq8UNgZF4T3BlbkFJwsmtb6aBADXEgwCFq1SS`
+- Access to other service credentials in environment variables
+- Access to system user information
+
+*Impact*:
+Critical - Allows unauthorised use of paid API services, potential access to other systems, and financial impact from API abuse.
+
+*CVSS Score*: 9.0 (Critical)
+
+**13. Cross-Site Request Forgery (CSRF) (A05:2021)**
+
+*Vulnerability Description*:
+The application lacks CSRF protection on forms and state-changing operations.
+
+*Evidence*:
+```python
+# No CSRF tokens in forms
+<form method="POST" action="/change_password">
+    <input type="password" name="new_password">
+    <button type="submit">Change Password</button>
+</form>
+
+# No CSRF validation in route handlers
+@app.route("/change_password", methods=["POST"])
+def change_password():
+    new_password = request.form.get("new_password")
+    # Process password change without CSRF validation
+```
+
+*Attack Vectors*:
+- Forged requests to change passwords
+- Forged requests to modify cart contents
+- Forged requests to perform admin actions
+
+*Impact*:
+High - Allows attackers to trick users into performing unintended actions while authenticated.
+
+*CVSS Score*: 6.8 (Medium)
+
+**14. Weak Session ID Generation (A02:2021)**
+
+*Vulnerability Description*:
+The application uses a weak secret key for session management, making session IDs predictable.
+
+*Evidence*:
+```python
+# Weak secret key
+app.secret_key = "12345"
+```
+
+*Attack Vectors*:
+- Session prediction attacks
+- Session fixation
+- Session hijacking
+
+*Impact*:
+High - Allows attackers to guess or generate valid session IDs, potentially leading to unauthorised access.
+
+*CVSS Score*: 7.5 (High)
+
+**15. Hardcoded Credentials (A07:2021)**
+
+*Vulnerability Description*:
+The application contains hardcoded credentials in the source code.
+
+*Evidence*:
+```python
+DEFAULT_CREDENTIALS = {
+    "admin": "admin123",  
+    "test": "test123",    
+    "demo": "demo123"     
+}
+```
+
+*Attack Vectors*:
+- Direct authentication using known credentials
+- Privilege escalation to admin account
+
+*Impact*:
+High - Provides immediate authenticated access to the application, including admin functionality.
+
+*CVSS Score*: 7.8 (High)
 
 ### COMPONENT A3: Fixes (10 marks)
 
