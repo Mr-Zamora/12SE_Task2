@@ -368,3 +368,452 @@ SQL Injection is a serious vulnerability that could lead to data theft.
    - Understand the technical reasons behind security best practices
    - Practice implementing security controls in code
    - Study formal risk assessment methodologies
+
+---
+
+## Model Answers and Solutions
+
+### COMPONENT A1: Introduction (5 marks)
+
+#### Model Answer Elements
+
+**Application Description**:
+
+The Pizza Ordering Application is a Flask-based web application that allows users to browse and order pizzas, create user accounts and profiles, manage a shopping cart, and access administrative functions (for admin users). The application uses SQLite for data storage and includes various endpoints for user interaction, including user registration, authentication, profile management, password reset functionality, and file upload/download capabilities.
+
+**Scope Definition**:
+
+This security assessment covers the following areas:
+- Authentication and session management
+- Input validation and sanitisation
+- Access control mechanisms
+- Data storage and protection
+- File handling and uploads
+- Error handling and information disclosure
+- API security
+- Configuration settings
+- Client-side security controls
+
+**Testing Methodology**:
+
+This assessment employs a combination of testing methodologies:
+
+1. **White-box Testing**: Examining the source code directly to identify vulnerabilities such as SQL injection, hardcoded credentials, and insecure configurations. This approach is particularly effective for identifying issues in the application's backend logic and database interactions.
+
+2. **Black-box Testing**: Testing the application as an end-user without knowledge of internal code, focusing on functionality and behaviour. This approach helps identify vulnerabilities from an attacker's perspective, such as broken access controls and client-side vulnerabilities.
+
+3. **Grey-box Testing**: Combining elements of both approaches with partial knowledge of internal workings. This hybrid approach allows for targeted testing of specific components while maintaining an external perspective.
+
+The choice of methodology for each vulnerability category is based on effectiveness and efficiency:
+- SQL Injection: White-box testing to identify unparameterised queries in the codebase
+- XSS Vulnerabilities: Black-box testing to identify input fields vulnerable to script injection
+- Access Control: Grey-box testing to understand authentication mechanisms and test for bypasses
+- File Upload Vulnerabilities: Black-box testing to attempt uploading malicious files
+- Information Disclosure: Grey-box testing to identify sensitive data exposure points
+
+**Planning Approach**:
+
+The security assessment is underpinned by a structured approach following the OWASP Testing Guide methodology:
+1. Information gathering and application mapping
+2. Vulnerability identification using the OWASP Top 10 as a framework
+3. Exploitation testing to confirm vulnerabilities
+4. Impact assessment using CVSS scoring
+5. Remediation planning with practical code examples
+
+Documentation is maintained throughout the process, with findings categorised according to the OWASP Top 10 (2021) to ensure comprehensive coverage of modern web application security risks.
+
+### COMPONENT A2: Findings (10 marks)
+
+#### Model Answer Elements
+
+**1. SQL Injection (A03:2021)**
+
+*Vulnerability Description*:
+Multiple instances of SQL injection vulnerabilities were identified throughout the application due to the use of unparameterised queries that directly incorporate user input into SQL statements.
+
+*Evidence*:
+```python
+# Login function SQL injection
+query = f"SELECT * FROM users WHERE username = '{username}' AND password = '{password}'"
+c.execute(query)
+
+# Error test endpoint
+@app.route("/error_test")
+def error_test():
+    username = request.args.get("username")
+    query = f"SELECT * FROM users WHERE username = '{username}'"
+    c.execute(query)  
+    return f"Executed query: {query}"
+```
+
+*Attack Vectors*:
+- Authentication bypass: `username: admin' --` with any password
+- Data extraction: `?username=admin' UNION SELECT * FROM users--`
+- Database enumeration: `?username=' UNION SELECT name FROM sqlite_master WHERE type='table'--`
+
+*Impact*:
+Critical - Allows unauthorised access to any user account, including admin accounts, and potential extraction of all database data. An attacker could view, modify, or delete any information in the database.
+
+*CVSS Score*: 9.8 (Critical)
+
+**2. Broken Access Control (A01:2021)**
+
+*Vulnerability Description*:
+The application contains multiple broken access control vulnerabilities, including a debug endpoint that allows arbitrary file reading, an unrestricted file upload feature, and insecure direct object references (IDOR) in the profile view.
+
+*Evidence*:
+```python
+# Debug endpoint
+@app.route("/debug/<path:file_path>")
+def debug_file(file_path):
+    with open(file_path, 'r') as f:
+        content = f.read()
+    return content
+
+# Unrestricted file upload
+@app.route("/upload", methods=["GET", "POST"])
+def upload():
+    if request.method == "POST":
+        file = request.files["file"]
+        file.save(f"./uploads/{file.filename}")
+        return "File uploaded!"
+
+# IDOR vulnerability
+@app.route("/profile/<int:user_id>")
+def view_profile(user_id):
+    # No authorization check
+    # Direct access to any profile by ID
+```
+
+*Attack Vectors*:
+- Source code access: `/debug/app.py`
+- Database access: `/debug/users.db`
+- Malicious file upload: Upload executable files (e.g., PHP shells)
+- Profile enumeration: Sequentially access profiles by changing the user_id parameter
+
+*Impact*:
+Critical - Allows unauthorised access to sensitive files, source code, system information, and user data. Could lead to remote code execution through malicious file uploads.
+
+*CVSS Score*: 9.1 (Critical)
+
+**3. Security Misconfiguration (A05:2021)**
+
+*Vulnerability Description*:
+The application contains multiple security misconfigurations, including debug mode enabled in production, unrestricted CORS configuration, weak session configuration, missing security headers, and system information disclosure.
+
+*Evidence*:
+```python
+# Debug mode enabled
+app.run(debug=True)
+
+# Unrestricted CORS
+CORS(app, resources={r"/*": {"origins": "*"}})
+
+# Weak session key
+app.secret_key = "12345"
+
+# System information disclosure
+system_info = {
+    'os': platform.system(),
+    'version': platform.version(),
+    'python': sys.version,
+    'user': os.getlogin(),
+    'cwd': os.getcwd(),
+    'env': dict(os.environ)  # Exposes ALL environment variables!
+}
+```
+
+*Attack Vectors*:
+- Werkzeug debugger exploitation
+- Cross-origin attacks through permissive CORS
+- Session hijacking due to weak session configuration
+- Clickjacking due to missing X-Frame-Options header
+- API key theft from exposed environment variables
+
+*Impact*:
+Critical - Enables various attacks including remote code execution through the debugger, cross-origin attacks, session hijacking, and exposure of sensitive API keys.
+
+*CVSS Score*: 8.6 (High)
+
+**4. Cryptographic Failures (A02:2021)**
+
+*Vulnerability Description*:
+The application fails to properly protect sensitive data, storing passwords and credit card information in plaintext, using hardcoded credentials, and lacking encryption for sensitive data.
+
+*Evidence*:
+```python
+# Plaintext password storage
+c.execute("INSERT INTO users (username, password) VALUES (?, ?)", (username, password))
+
+# Hardcoded credentials
+DEFAULT_CREDENTIALS = {
+    "admin": "admin123",  
+    "test": "test123",    
+    "demo": "demo123"     
+}
+
+# Plaintext sensitive data
+return f"""
+    <h2>User Profile</h2>
+    <pre>
+    Username: {data[0]}
+    Full Name: {data[2]}
+    Email: {data[3]}
+    Phone: {data[4]}
+    Credit Card: {data[5]}
+    Address: {data[6]}
+    </pre>
+"""
+```
+
+*Attack Vectors*:
+- Database access revealing all user passwords
+- Source code access revealing hardcoded credentials
+- Profile access revealing credit card information
+
+*Impact*:
+Critical - If the database is compromised, all user passwords and sensitive information are immediately exposed. Hardcoded credentials provide easy access to the application.
+
+*CVSS Score*: 9.1 (Critical)
+
+**5. Cross-Site Scripting (XSS)**
+
+*Vulnerability Description*:
+The application is vulnerable to cross-site scripting due to unescaped user input in HTML responses and missing security headers.
+
+*Evidence*:
+```python
+# Unescaped user input
+return f"""
+    <h2>User Profile</h2>
+    <pre>
+    Username: {data[0]}
+    Full Name: {data[2]}
+    Email: {data[3]}
+    Phone: {data[4]}
+    Credit Card: {data[5]}
+    Address: {data[6]}
+    </pre>
+"""
+```
+
+*Attack Vectors*:
+- Stored XSS: Insert malicious script in profile information
+- Reflected XSS: Pass malicious script through URL parameters
+
+*Impact*:
+High - Allows execution of malicious scripts in users' browsers, potentially leading to session hijacking, credential theft, or malicious redirects.
+
+*CVSS Score*: 8.2 (High)
+
+### COMPONENT A3: Fixes (10 marks)
+
+#### Model Answer Elements
+
+**1. SQL Injection Remediation**
+
+*Before*:
+```python
+query = f"SELECT * FROM users WHERE username = '{username}' AND password = '{password}'"
+c.execute(query)
+```
+
+*After*:
+```python
+# Use parameterised queries
+c.execute("SELECT * FROM users WHERE username = ? AND password = ?", (username, password))
+
+# Alternative using SQLAlchemy ORM
+user = User.query.filter_by(username=username, password=password).first()
+```
+
+*Explanation*:
+Parameterised queries separate the SQL code from the data, preventing the interpreter from treating user input as executable code. This approach handles all types of SQL injection, not just quote escaping, and is database-engine specific to properly handle different data types.
+
+**2. Broken Access Control Fixes**
+
+*Before*:
+```python
+@app.route("/profile/<int:user_id>")
+def view_profile(user_id):
+    # No authorization check
+    # Fetch and display profile
+```
+
+*After*:
+```python
+# Authentication middleware
+def login_required(f):
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        if 'user' not in session:
+            return redirect(url_for('login'))
+        return f(*args, **kwargs)
+    return decorated_function
+
+@app.route('/profile/<int:user_id>')
+@login_required
+def view_profile(user_id):
+    # Only allow users to view their own profile or admin to view any profile
+    if int(session['user_id']) != user_id and session['role'] != 'admin':
+        return "Access Denied", 403
+    # Fetch and display profile
+```
+
+*Explanation*:
+Implementing proper authentication and authorisation checks ensures that users can only access resources they are permitted to view. The login_required decorator enforces authentication, while the additional check ensures users can only view their own profiles unless they have admin privileges.
+
+**3. Security Configuration Improvements**
+
+*Before*:
+```python
+app.secret_key = "12345"
+app.run(debug=True)
+CORS(app, resources={r"/*": {"origins": "*"}})
+```
+
+*After*:
+```python
+# Secure session configuration
+import os
+from datetime import timedelta
+
+app.secret_key = os.urandom(24)
+app.config.update(
+    SESSION_COOKIE_SECURE=True,
+    SESSION_COOKIE_HTTPONLY=True,
+    SESSION_COOKIE_SAMESITE='Lax',
+    PERMANENT_SESSION_LIFETIME=timedelta(hours=1)
+)
+
+# Environment-specific debug mode
+debug_mode = os.environ.get('FLASK_ENV') == 'development'
+app.run(debug=debug_mode)
+
+# Restricted CORS policy
+CORS(app, resources={
+    r"/api/*": {
+        "origins": ["https://trusted-domain.com"],
+        "methods": ["GET", "POST"],
+        "allow_credentials": True
+    }
+})
+
+# Security headers
+@app.after_request
+def add_security_headers(response):
+    response.headers['X-Frame-Options'] = 'DENY'
+    response.headers['X-Content-Type-Options'] = 'nosniff'
+    response.headers['X-XSS-Protection'] = '1; mode=block'
+    response.headers['Content-Security-Policy'] = "default-src 'self'"
+    response.headers['Strict-Transport-Security'] = 'max-age=31536000; includeSubDomains'
+    return response
+```
+
+*Explanation*:
+These changes implement multiple security best practices:
+1. Using a strong, random secret key for sessions
+2. Setting secure cookie attributes to prevent theft and misuse
+3. Disabling debug mode in production environments
+4. Implementing a restrictive CORS policy that only allows specific origins and methods
+5. Adding security headers to prevent various client-side attacks
+
+**4. Cryptographic Improvements**
+
+*Before*:
+```python
+# Plaintext password storage
+c.execute("INSERT INTO users (username, password) VALUES (?, ?)", (username, password))
+```
+
+*After*:
+```python
+# Password hashing
+from werkzeug.security import generate_password_hash, check_password_hash
+
+# For registration:
+password_hash = generate_password_hash(password)
+c.execute("INSERT INTO users (username, password) VALUES (?, ?)", 
+          (username, password_hash))
+
+# For login:
+c.execute("SELECT * FROM users WHERE username = ?", (username,))
+user = c.fetchone()
+if user and check_password_hash(user[2], password):
+    # Login successful
+
+# For sensitive data
+from cryptography.fernet import Fernet
+
+def encrypt_data(data, key):
+    f = Fernet(key)
+    return f.encrypt(data.encode()).decode()
+
+def decrypt_data(encrypted_data, key):
+    f = Fernet(key)
+    return f.decrypt(encrypted_data.encode()).decode()
+
+# Store encrypted credit card
+encrypted_cc = encrypt_data(credit_card, encryption_key)
+c.execute("INSERT INTO profiles (user_id, credit_card) VALUES (?, ?)", 
+          (user_id, encrypted_cc))
+```
+
+*Explanation*:
+These changes implement proper cryptographic practices:
+1. Using a secure hashing algorithm (bcrypt via Werkzeug) for password storage
+2. Implementing encryption for sensitive data like credit card numbers
+3. Separating the encryption key from the application code
+
+**5. Secure File Handling**
+
+*Before*:
+```python
+@app.route("/upload", methods=["GET", "POST"])
+def upload():
+    if request.method == "POST":
+        file = request.files["file"]
+        file.save(f"./uploads/{file.filename}")
+        return "File uploaded!"
+```
+
+*After*:
+```python
+from werkzeug.utils import secure_filename
+import os
+
+UPLOAD_FOLDER = 'uploads'
+ALLOWED_EXTENSIONS = {'txt', 'pdf', 'png', 'jpg', 'jpeg', 'gif'}
+MAX_CONTENT_LENGTH = 16 * 1024 * 1024  # 16MB limit
+
+app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
+app.config['MAX_CONTENT_LENGTH'] = MAX_CONTENT_LENGTH
+
+def allowed_file(filename):
+    return '.' in filename and \
+           filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
+
+@app.route('/upload', methods=['GET', 'POST'])
+@login_required
+def upload_file():
+    if request.method == 'POST':
+        if 'file' not in request.files:
+            return 'No file part', 400
+        file = request.files['file']
+        if file.filename == '':
+            return 'No selected file', 400
+        if file and allowed_file(file.filename):
+            filename = secure_filename(file.filename)
+            file.save(os.path.join(app.config['UPLOAD_FOLDER'], filename))
+            return 'File uploaded successfully'
+        return 'File type not allowed', 400
+    return render_template('upload.html')
+```
+
+*Explanation*:
+These changes implement secure file handling practices:
+1. Using secure_filename to sanitise filenames and prevent path traversal
+2. Implementing file type validation to only allow safe file types
+3. Setting a maximum file size to prevent denial of service attacks
+4. Requiring authentication to upload files
+5. Storing files in a designated directory with proper path joining
